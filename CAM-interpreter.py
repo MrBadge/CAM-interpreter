@@ -23,7 +23,7 @@ class CAM:
     }
 
     def __init__(self, code):
-        self.code = code
+        self.code = code.replace(' ', '')
         self.term = ()
         self.stack = []
 
@@ -69,16 +69,17 @@ class CAM:
     def _math_op(self, f):
         self.term = f(int(self.term[0]), int(self.term[1]))
 
-    def _get_next_token(self, code):
+    def _get_next_token(self):
+        # self.code = self.code.strip()
         for item in self._transitions.keys():
             if self.code.startswith(item):
                 self.code = self.code[len(item):]
                 return item
-        return code
+        return self.code
 
     def nex_step(self):
         try:
-            self._transitions[self._get_next_token(self.code)](self)
+            self._transitions[self._get_next_token()](self)
             self.iteration += 1
         except KeyError, e:
             self.evaluated = True
@@ -119,7 +120,7 @@ class CAM:
 if __name__ == "__main__":
     import time
 
-    examples = [u"<Λ(Snd+),<'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
+    examples = [u"<Λ( Snd +),     <'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
     for example in examples:
         print 'EXAMPLE STARTED'
         start = time.time()
