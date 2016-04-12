@@ -1,16 +1,12 @@
 # coding=utf-8
 import operator
+from copy import deepcopy
+
 import re
+from texttable import Texttable
 
 
-class KAM:
-    code = ''
-    term = ()
-    stack = []
-    evaluated = False
-    errors = False
-    iteration = 0
-
+class CAM:
     _transitions = {
         '<': lambda self: self._push(),
         ',': lambda self: self._swap(),
@@ -28,6 +24,15 @@ class KAM:
 
     def __init__(self, code):
         self.code = code
+        self.term = ()
+        self.stack = []
+
+        self.history = []
+        self.iteration = 0
+        self.evaluated = False
+        self.errors = False
+
+        self.history.append([self.iteration, self.term, self.code, self.stack])
 
     def _push(self):
         self.stack.append(self.term)
@@ -86,13 +91,40 @@ class KAM:
 
     def evaluate(self):
         while self.code and not self.evaluated:
-            print '%4d)   %35s     %35s     %35s' % (self.iteration, self.term, self.code, self.stack)
             self.nex_step()
-        if not self.errors:
-            print '%4d)   %35s     %35s     %35s' % (self.iteration, self.term, self.code, self.stack)
+            self.history.append([self.iteration, self.term, self.code, deepcopy(self.stack)])
         self.evaluated = True
 
+    def print_steps(self):
+        def max_len_of_list_of_str(s):
+            return max(len(line) for line in str(s).split('\n'))
 
-# KAM(u"<Λ(Snd+),<'1,'2>>ε").evaluate()
+        def autodetect_width(d):
+            widths = [0] * len(d[0])
+            for line in d:
+                for _i in range(len(line)):
+                    widths[_i] = max(widths[_i], max_len_of_list_of_str(line[_i]))
+            return widths
 
-KAM(u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε").evaluate()
+        t = Texttable()
+        data = [['№', 'Term', 'Code', 'Stack']] + [
+            [i.encode('utf-8') if isinstance(i, basestring) else str(i) for i in item] for item in self.history]
+        t.add_rows(data)
+        t.set_cols_align(['l', 'r', 'r', 'r'])
+        t.set_cols_valign(['m', 'm', 'm', 'm'])
+        t.set_cols_width(autodetect_width(data))
+        print t.draw()
+
+
+if __name__ == "__main__":
+    import time
+
+    examples = [u"<Λ(Snd+),<'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
+    for example in examples:
+        print 'EXAMPLE STARTED'
+        start = time.time()
+        k = CAM(example)
+        k.evaluate()
+        k.print_steps()
+        print 'EXAMPLE ENDED, TOOK %s s\n' % (time.time() - start)
+        del k
