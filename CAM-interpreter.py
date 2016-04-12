@@ -70,14 +70,13 @@ class CAM:
         self.term = f(int(self.term[0]), int(self.term[1]))
 
     def _get_next_token(self):
-        # self.code = self.code.strip()
         for item in self._transitions.keys():
             if self.code.startswith(item):
                 self.code = self.code[len(item):]
                 return item
         return self.code
 
-    def nex_step(self):
+    def next_step(self):
         try:
             self._transitions[self._get_next_token()](self)
             self.iteration += 1
@@ -92,7 +91,7 @@ class CAM:
 
     def evaluate(self):
         while self.code and not self.evaluated:
-            self.nex_step()
+            self.next_step()
             self.history.append([self.iteration, self.term, self.code, deepcopy(self.stack)])
         self.evaluated = True
 
