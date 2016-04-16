@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import re
 from texttable import Texttable
-
+from utils import get_term_in_brackets, TermException
 
 class DictHack(dict):
     def __repr__(self):
@@ -30,23 +30,6 @@ class CAM:
         '=': lambda self: self._math_op(operator.eq)
 
     }
-
-    @staticmethod
-    def _get_term_in_brackets(expr, br='()', remove_brackets=True):
-        if expr[0] == br[0]:
-            br_sum = 1
-            term = ''
-            for i, c in enumerate(expr[1:]):
-                if c == br[0]:
-                    br_sum += 1
-                elif c == br[1]:
-                    br_sum -= 1
-                if br_sum == 0:
-                    return term if remove_brackets else br[0] + term + br[1], expr[i + 2:]
-                elif br_sum < 0:
-                    return None
-                term += c
-        return None
 
     def __init__(self, code):
         self.code = code.replace(' ', '')
@@ -83,7 +66,7 @@ class CAM:
         self.term = (self.stack.pop(), self.term)
 
     def _cur(self):
-        parse_arg = CAM._get_term_in_brackets(self.code)
+        parse_arg = get_term_in_brackets(self.code)
         self.code = parse_arg[1]
         self.term = DictHack({parse_arg[0]: self.term})
 
