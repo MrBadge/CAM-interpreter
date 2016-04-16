@@ -4,11 +4,7 @@ from copy import deepcopy
 
 import re
 from texttable import Texttable
-from utils import get_term_in_brackets, TermException
-
-class DictHack(dict):
-    def __repr__(self):
-        return dict.__repr__(self)[1:-1]
+from utils import get_term_in_brackets, DictHack, UnicodeHack
 
 
 class CAM:
@@ -32,7 +28,7 @@ class CAM:
     }
 
     def __init__(self, code):
-        self.code = code.replace(' ', '')
+        self.code = UnicodeHack(code.replace(' ', ''))
         self.term = ()
         self.stack = []
 
@@ -44,7 +40,7 @@ class CAM:
         self.history.append([0, (), self.code, []])
 
     def _branch(self):
-        args, code = CAM._get_term_in_brackets(self.code)
+        args, code = get_term_in_brackets(self.code)
         if not isinstance(self.term, bool):
             raise Exception('Term is neither true not false')
         elif self.term:
@@ -108,10 +104,8 @@ class CAM:
 
     def evaluate(self):
         while self.code and not self.evaluated:
-            if self.iteration == 11:
-                pass
             self.next_step()
-            self.history.append([self.iteration, self.term, self.code, deepcopy(self.stack)])
+            self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
         self.evaluated = True
 
     def print_steps(self):
@@ -142,14 +136,12 @@ if __name__ == "__main__":
 
     # examples = [u"<Λ( Snd +),     <'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
     # examples = [u"<Λ(<Snd, <'4, '3>>ε),Λ(Snd+)>ε"]
-
     # examples = [u"<<Λ(Λ(<Λ(SndP),<Fst Snd,Snd>>)),'1>ε,'0>ε"]
-    # examples = [u"<Λ(<Λ(<<Snd,Snd Fst>ε,'2>ε),Λ(Snd*)>ε),'3>ε"] #my bad one
     # examples = [u"<Λ(<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε),'3>ε"]
     # examples = [u"<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε"]
     # examples = [u"<Λ(<<Snd,'4>ε,<Λ(Snd),'3>ε>ε),Λ(Snd+)>ε"]
 
-    examples = [u"<Λ(<Λ(<Λ(Snd+),<SndFst,Snd>>ε),'3>ε),'2>ε"]
+    examples = [u"<Λ(<Λ(<Λ(Snd+),<FstSnd,Snd>>ε),'3>ε),'2>ε"]
     for example in examples:
         print 'EXAMPLE STARTED'
         start = time.time()
