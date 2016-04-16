@@ -6,6 +6,11 @@ import re
 from texttable import Texttable
 
 
+class DictHack(dict):
+    def __repr__(self):
+        return dict.__repr__(self)[1:-1]
+
+
 class CAM:
     _transitions = {
         '<': lambda self: self._push(),
@@ -17,10 +22,31 @@ class CAM:
         u'ε': lambda self: self._app(),
         u'Λ': lambda self: self._cur(),
 
+        'branch': lambda self: self._branch(),
+
         '+': lambda self: self._math_op(operator.add),
         '-': lambda self: self._math_op(operator.sub),
         '*': lambda self: self._math_op(operator.mul),
+        '=': lambda self: self._math_op(operator.eq)
+
     }
+
+    @staticmethod
+    def _get_term_in_brackets(expr, br='()', remove_brackets=True):
+        if expr[0] == br[0]:
+            br_sum = 1
+            term = ''
+            for i, c in enumerate(expr[1:]):
+                if c == br[0]:
+                    br_sum += 1
+                elif c == br[1]:
+                    br_sum -= 1
+                if br_sum == 0:
+                    return term if remove_brackets else br[0] + term + br[1], expr[i + 2:]
+                elif br_sum < 0:
+                    return None
+                term += c
+        return None
 
     def __init__(self, code):
         self.code = code.replace(' ', '')
@@ -32,7 +58,17 @@ class CAM:
         self.evaluated = False
         self.errors = False
 
-        self.history.append([self.iteration, self.term, self.code, self.stack])
+        self.history.append([0, (), self.code, []])
+
+    def _branch(self):
+        args, code = CAM._get_term_in_brackets(self.code)
+        if not isinstance(self.term, bool):
+            raise Exception('Term is neither true not false')
+        elif self.term:
+            self.code = args.split(',')[0] + self.code
+        else:
+            self.code = args.split(',')[1] + self.code
+        self.term = self.stack.pop()
 
     def _push(self):
         self.stack.append(self.term)
@@ -47,11 +83,9 @@ class CAM:
         self.term = (self.stack.pop(), self.term)
 
     def _cur(self):
-        start_pos = 0
-        end_pos = self.code.find(')')
-        arg = self.code[start_pos:end_pos + 1]
-        self.code = self.code[end_pos + 1:]
-        self.term = {arg[1:-1]: self.term}
+        parse_arg = CAM._get_term_in_brackets(self.code)
+        self.code = parse_arg[1]
+        self.term = DictHack({parse_arg[0]: self.term})
 
     def _quote(self):
         self.term = re.findall(r'\d+', self.code)[0]
@@ -91,6 +125,8 @@ class CAM:
 
     def evaluate(self):
         while self.code and not self.evaluated:
+            if self.iteration == 11:
+                pass
             self.next_step()
             self.history.append([self.iteration, self.term, self.code, deepcopy(self.stack)])
         self.evaluated = True
@@ -106,9 +142,11 @@ class CAM:
                     widths[_i] = max(widths[_i], max_len_of_list_of_str(line[_i]))
             return widths
 
+        if self.errors:
+            self.history = self.history[:-1]
         t = Texttable()
         data = [['№', 'Term', 'Code', 'Stack']] + [
-            [i.encode('utf-8') if isinstance(i, basestring) else str(i) for i in item] for item in self.history]
+            [repr(i).decode("unicode_escape").encode('utf-8') for i in item] for item in self.history]
         t.add_rows(data)
         t.set_cols_align(['l', 'r', 'r', 'r'])
         t.set_cols_valign(['m', 'm', 'm', 'm'])
@@ -119,7 +157,16 @@ class CAM:
 if __name__ == "__main__":
     import time
 
-    examples = [u"<Λ( Snd +),     <'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
+    # examples = [u"<Λ( Snd +),     <'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
+    # examples = [u"<Λ(<Snd, <'4, '3>>ε),Λ(Snd+)>ε"]
+
+    # examples = [u"<<Λ(Λ(<Λ(SndP),<Fst Snd,Snd>>)),'1>ε,'0>ε"]
+    # examples = [u"<Λ(<Λ(<<Snd,Snd Fst>ε,'2>ε),Λ(Snd*)>ε),'3>ε"] #my bad one
+    # examples = [u"<Λ(<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε),'3>ε"]
+    # examples = [u"<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε"]
+    # examples = [u"<Λ(<<Snd,'4>ε,<Λ(Snd),'3>ε>ε),Λ(Snd+)>ε"]
+
+    examples = [u"<Λ(<Λ(<Λ(Snd+),<SndFst,Snd>>ε),'3>ε),'2>ε"]
     for example in examples:
         print 'EXAMPLE STARTED'
         start = time.time()
