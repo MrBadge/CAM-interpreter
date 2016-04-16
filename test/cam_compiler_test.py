@@ -13,8 +13,8 @@ class TestCAM(unittest.TestCase):
         ]
 
         res = [
-            u"<Λ(<Λ(<<Snd,SndFst>ε,'2>ε),Λ(Snd*)>ε),'3>ε",
-            u"<Λ(<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε),'3>ε"
+            u"<Λ(<Λ(<<Snd,FstSnd>ε,'2>ε),Λ(Snd*)>ε),'3>ε",
+            u"<Λ(<Λ(<Snd, <FstSnd , '2>>ε),Λ(Snd*)>ε),'3>ε"
         ]
 
         for expr, r in zip(exprs, res):
