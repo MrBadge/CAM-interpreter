@@ -67,7 +67,7 @@ class CAM:
         self.term = DictHack({parse_arg[0]: self.term})
 
     def _quote(self):
-        self.term = re.findall(r'\d+', self.code)[0]
+        self.term = UnicodeHack(re.findall(r'\d+', self.code)[0])
         self.code = self.code[len(str(self.term)):]
 
     def _swap(self):
