@@ -63,8 +63,7 @@ class Term:
                 expr = expr[1:-1]
             else:
                 break
-        else:
-            return expr
+        return expr
 
     @staticmethod
     def get_term(op, left, right):
@@ -117,7 +116,7 @@ class Constant(Term):
 
 
 class Variable(Term):
-    NAMES = ['x', 'y', 'z']
+    NAMES = ['x', 'y', 'z', 'f']
     name = None
     de_br_code = None
     var_list = []
