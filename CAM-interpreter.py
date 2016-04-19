@@ -1,6 +1,8 @@
+#!/usr/bin/env python
 # coding=utf-8
 import operator
 from copy import deepcopy
+from math import log10
 
 import re
 from texttable import Texttable
@@ -9,27 +11,30 @@ from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, Unicod
 
 class CAM:
     _transitions = {
+        '>': lambda self: self._cons(),
         '<': lambda self: self.stack.append(self.term),
         ',': lambda self: self._swap(),
-        '>': lambda self: self._cons(),
         '\'': lambda self: self._quote(),
-        'Fst': lambda self: self._car(),
-        'Snd': lambda self: self._cdr(),
-
-        u'ε': lambda self: self._app(),
-        'Eps': lambda self: self._app(),
 
         u'Λ': lambda self: self._cur(),
         '\\': lambda self: self._cur(),
 
-        'branch': lambda self: self._branch(),
+        u'ε': lambda self: self._app(),
+        'Eps': lambda self: self._app(),
+
+        'Fst': lambda self: self._car(),
+        'Snd': lambda self: self._cdr(),
+
+        'br': lambda self: self._branch(),
         'Y': lambda self: self._rec(),
 
+        '*': lambda self: self._math_op(operator.mul),
         '+': lambda self: self._math_op(operator.add),
         '-': lambda self: self._math_op(operator.sub),
-        '*': lambda self: self._math_op(operator.mul),
         '=': lambda self: self._math_op(operator.eq)
     }
+    _valid_tokens = _transitions.keys()
+    _possible_token_len = list(set(map(len, _transitions.keys())))
 
     def __init__(self, code, save_history=True):
         self.code = UnicodeHack(code.replace(' ', ''))
@@ -37,6 +42,7 @@ class CAM:
         self.stack = []
 
         self.recursion_stack = {}
+        self.recs_count = 0
 
         self.history = []
         self.iteration = 0
@@ -49,14 +55,13 @@ class CAM:
 
     def _rec(self):
         arg, code = get_term_in_brackets(self.code)
-        rec_name = 'rec' + str(len(self.recursion_stack))
+        rec_name = 'r' + str(self.recs_count)
+        self.recs_count += 1
         self.recursion_stack[rec_name] = DictHack({arg: (self.term, rec_name)})
         self.term = self.recursion_stack[rec_name]
         self.code = code
 
     def _branch(self):
-        if not isinstance(self.term, bool):
-            raise Exception('Term is neither true nor false')
         args, code = get_term_in_brackets(self.code, remove_brackets=False)
         arg1, arg2 = parse_args_in_brackets(args)
         self.code = (arg1 if self.term else arg2) + code
@@ -79,8 +84,9 @@ class CAM:
         self.term = DictHack({arg: self.term})
 
     def _quote(self):
-        self.term = UnicodeHack(re.findall(r'\d+', self.code)[0])
-        self.code = self.code[len(str(self.term)):]
+        self.term = UnicodeHack(re.search(r'\d+', self.code).group())
+        length = int(log10(int(self.term))) + 1 if self.term != '0' else len(self.term)
+        self.code = self.code[length:]
 
     def _swap(self):
         tmp = self.stack.pop()
@@ -99,20 +105,17 @@ class CAM:
         self.term = f(int(self.term[0]), int(self.term[1]))
 
     def _get_next_token(self):
-        for item in self._transitions.keys():
-            if self.code.startswith(item):
-                self.code = self.code[len(item):]
-                return item
+        for i in self._possible_token_len:
+            if self.code[0:i] in self._valid_tokens:
+                next_token = self.code[0:i]
+                self.code = self.code[i:]
+                return next_token
         raise Exception('Unknown token')
 
     def next_step(self):
         try:
             self._transitions[self._get_next_token()](self)
             self.iteration += 1
-        except KeyError, e:
-            self.evaluated = True
-            self.errors = True
-            print 'Unknown operation: %s' % str(e)
         except Exception, e:
             self.evaluated = True
             self.errors = True
@@ -156,13 +159,8 @@ class CAM:
 
 if __name__ == "__main__":
     import time
+    # from math import factorial
     # import cam_compiler
-
-    # import sys
-    #
-    # sys.setrecursionlimit(100000000)
-    # factorial = lambda x: x and factorial(x - 1) * x or 1
-    # print factorial(10000)
 
     # dz1 = '(\\f.\\x.f x)(\\x.+[1,x])3'
     # dz2 = '((\\x.\\f.+[x,f x])5)(\\x.*[4,x])'
@@ -179,14 +177,15 @@ if __name__ == "__main__":
     # examples = [u"<<Λ(Λ(<FstSnd,<Snd,FstSnd>ε>>+)),Λ(<'4,Snd>*)>ε,'5>ε"]
 
     C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
-    B = u"<<Snd,'0>=branch('1," + C + u")"
-    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 1000
+    B = u"<<Snd,'0>=br('1," + C + u")"
+    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
     examples = [fact]
     for example in examples:
         print 'EXAMPLE STARTED'
         k = CAM(example, save_history=False)
         start = time.time()
         k.evaluate()
+        # factorial(1000000)
         end = time.time() - start
         k.print_steps(show_result=False)
         print 'EXAMPLE ENDED, TOOK %s s\n' % end
