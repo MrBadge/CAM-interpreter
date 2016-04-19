@@ -4,12 +4,12 @@ from copy import deepcopy
 
 import re
 from texttable import Texttable
-from utils import get_term_in_brackets, DictHack, UnicodeHack
+from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, UnicodeHack
 
 
 class CAM:
     _transitions = {
-        '<': lambda self: self._push(),
+        '<': lambda self: self.stack.append(self.term),
         ',': lambda self: self._swap(),
         '>': lambda self: self._cons(),
         '\'': lambda self: self._quote(),
@@ -31,7 +31,7 @@ class CAM:
         '=': lambda self: self._math_op(operator.eq)
     }
 
-    def __init__(self, code, only_result=False):
+    def __init__(self, code, save_history=True):
         self.code = UnicodeHack(code.replace(' ', ''))
         self.term = ()
         self.stack = []
@@ -43,25 +43,23 @@ class CAM:
         self.evaluated = False
         self.errors = False
 
-        self.show_steps = not only_result
-        if self.show_steps:
+        self.save_history = save_history
+        if self.save_history:
             self.history.append([0, (), self.code, []])
 
     def _rec(self):
         arg, code = get_term_in_brackets(self.code)
-        rec_stack_depth = len(self.recursion_stack)
-        self.recursion_stack['rec' + str(rec_stack_depth)] = DictHack({arg: (self.term, 'rec' + str(rec_stack_depth))})
-        self.term = self.recursion_stack['rec' + str(rec_stack_depth)]
+        rec_name = 'rec' + str(len(self.recursion_stack))
+        self.recursion_stack[rec_name] = DictHack({arg: (self.term, rec_name)})
+        self.term = self.recursion_stack[rec_name]
         self.code = code
 
     def _branch(self):
-        args, code = get_term_in_brackets(self.code)
         if not isinstance(self.term, bool):
-            raise Exception('Term is neither true not false')
-        elif self.term:
-            self.code = args.split(',')[0] + code
-        else:
-            self.code = ','.join(args.split(',')[1:]) + code
+            raise Exception('Term is neither true nor false')
+        args, code = get_term_in_brackets(self.code, remove_brackets=False)
+        arg1, arg2 = parse_args_in_brackets(args)
+        self.code = (arg1 if self.term else arg2) + code
         self.term = self.stack.pop()
 
     def _push(self):
@@ -77,9 +75,8 @@ class CAM:
         self.term = (self.stack.pop(), self.term)
 
     def _cur(self):
-        parse_arg = get_term_in_brackets(self.code)
-        self.code = parse_arg[1]
-        self.term = DictHack({parse_arg[0]: self.term})
+        arg, self.code = get_term_in_brackets(self.code)
+        self.term = DictHack({arg: self.term})
 
     def _quote(self):
         self.term = UnicodeHack(re.findall(r'\d+', self.code)[0])
@@ -91,9 +88,10 @@ class CAM:
         self.term = tmp
 
     def _app(self):
-        self.term = (
-            self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
-            self.term[1])
+        if isinstance(self.term[0], basestring):
+            self.term = (
+                self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
+                self.term[1])
         self.code = self.term[0].keys()[0] + self.code
         self.term = (self.term[0].values()[0], self.term[1])
 
@@ -105,7 +103,7 @@ class CAM:
             if self.code.startswith(item):
                 self.code = self.code[len(item):]
                 return item
-        return self.code
+        raise Exception('Unknown token')
 
     def next_step(self):
         try:
@@ -123,11 +121,11 @@ class CAM:
     def evaluate(self):
         while self.code and not self.evaluated:
             self.next_step()
-            if self.show_steps:
+            if self.save_history:
                 self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
         self.evaluated = True
 
-    def print_steps(self):
+    def print_steps(self, show_result=True):
         def max_len_of_list_of_str(s):
             return max(len(line) for line in str(s).split('\n'))
 
@@ -138,7 +136,7 @@ class CAM:
                     widths[_i] = max(widths[_i], max_len_of_list_of_str(line[_i]))
             return widths
 
-        if self.show_steps:
+        if self.save_history:
             if self.errors:
                 self.history = self.history[:-1]
             t = Texttable()
@@ -152,16 +150,16 @@ class CAM:
         else:
             if not self.errors:
                 print '%s steps' % self.iteration
-                # print 'Result: %s' % self.term
+                if show_result:
+                    print 'Result: %s' % self.term
 
 
 if __name__ == "__main__":
     import time
-
     # import cam_compiler
 
     # import sys
-
+    #
     # sys.setrecursionlimit(100000000)
     # factorial = lambda x: x and factorial(x - 1) * x or 1
     # print factorial(10000)
@@ -182,13 +180,14 @@ if __name__ == "__main__":
 
     C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
     B = u"<<Snd,'0>=branch('1," + C + u")"
-    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
+    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 1000
     examples = [fact]
     for example in examples:
         print 'EXAMPLE STARTED'
+        k = CAM(example, save_history=False)
         start = time.time()
-        k = CAM(example, only_result=True)
         k.evaluate()
-        k.print_steps()
-        print 'EXAMPLE ENDED, TOOK %s s\n' % (time.time() - start)
+        end = time.time() - start
+        k.print_steps(show_result=False)
+        print 'EXAMPLE ENDED, TOOK %s s\n' % end
         del k

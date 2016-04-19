@@ -27,3 +27,15 @@ def get_term_in_brackets(expr, br='()', remove_brackets=True):
                 raise TermException('Invalid brackets in expr: %s', expr)
             term += c
     raise TermException('Invalid brackets in expr: %s', expr)
+
+
+def parse_args_in_brackets(expr, br='()'):
+    br_sum = 1
+    for i, c in enumerate(expr[1:]):
+        if c == br[0]:
+            br_sum += 1
+        elif c == br[1]:
+            br_sum -= 1
+        elif c == ',' and br_sum == 1:
+            return expr[1:i + 1], expr[i + 2:-1]
+    return None
