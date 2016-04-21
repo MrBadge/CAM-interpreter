@@ -3,7 +3,7 @@
 import operator
 from copy import deepcopy
 from math import log10
-from collections import deque
+
 import re
 from texttable import Texttable
 from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, UnicodeHack
@@ -89,7 +89,7 @@ class CAM:
     def _rec_new(self):
         rec_name = 'r' + str(self.recs_count)
         self.recs_count += 1
-        self.recursion_stack[rec_name] = (self.parsed_code.pop(0), (self.term, rec_name))
+        self.recursion_stack[rec_name] = (self.parsed_code.pop(), (self.term, rec_name))
         self.term = self.recursion_stack[rec_name]
 
     def _branch(self):
@@ -99,8 +99,8 @@ class CAM:
         self.term = self.stack.pop()
 
     def _branch_new(self):
-        args = self.parsed_code.pop(0)
-        self.parsed_code = (args[0] if self.term else args[1]) + self.parsed_code
+        args = self.parsed_code.pop()
+        self.parsed_code += (args[0] if self.term else args[1])
         self.term = self.stack.pop()
 
     def _push(self):
@@ -120,7 +120,7 @@ class CAM:
         self.term = DictHack({arg: self.term})
 
     def _cur_new(self):
-        self.term = (self.parsed_code.pop(0), self.term)
+        self.term = (self.parsed_code.pop(), self.term)
 
     def _quote(self):
         self.term = UnicodeHack(re.search(self.nums_re, self.code).group())
@@ -128,7 +128,7 @@ class CAM:
         self.code = self.code[length:]
 
     def _quote_new(self):
-        self.term = self.parsed_code.pop(0)[0]
+        self.term = self.parsed_code.pop()[0]
 
     def _swap(self):
         tmp = self.stack.pop()
@@ -148,11 +148,11 @@ class CAM:
             self.term = (
                 self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
                 self.term[1])
-        self.parsed_code = self.term[0][0] + self.parsed_code
+        self.parsed_code += self.term[0][0]
         self.term = (self.term[0][1], self.term[1])
 
     def _math_op(self, f):
-        self.term = f(int(self.term[0]), int(self.term[1]))
+        self.term = f(self.term[0], self.term[1])
 
     def _get_next_token(self):
         for i in self._possible_token_len:
@@ -178,7 +178,7 @@ class CAM:
                 parsed_code.append(self._parse_code(arg))
             elif next_token == '\'':
                 arg = UnicodeHack(re.search(self.nums_re, code).group())
-                parsed_code.append([arg])
+                parsed_code.append([int(arg)])
                 length = int(log10(int(arg))) + 1 if arg != '0' else len(arg)
                 code = code[length:]
             elif next_token == 'br':
@@ -196,16 +196,6 @@ class CAM:
             self.errors = True
             print 'Code could be invalid. Got exception: ' + str(e)
 
-    def next_step_new(self):
-        try:
-            tmp = self.parsed_code.pop(0)
-            self._transitions_new[tmp](self)
-            self.iteration += 1
-        except Exception, e:
-            self.evaluated = True
-            self.errors = True
-            print 'Code could be invalid. Got exception: ' + str(e)
-
     def evaluate(self):
         while self.code and not self.evaluated:
             self.next_step()
@@ -213,9 +203,10 @@ class CAM:
                 self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
         self.evaluated = True
 
-    def evaluate_new(self):
-        while self.parsed_code and not self.evaluated:
-            self.next_step_new()
+    def evaluate_fast(self):
+        while self.parsed_code:
+            self._transitions_new[self.parsed_code.pop()](self)
+            self.iteration += 1
         self.evaluated = True
 
     def print_steps(self, show_result=True):
@@ -269,13 +260,13 @@ if __name__ == "__main__":
 
     C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
     B = u"<<Snd,'0>=br('1," + C + u")"
-    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 1
+    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
     examples = [fact]
     for example in examples:
         print 'EXAMPLE STARTED'
         k = CAM(example, save_history=False)
         start = time.time()
-        k.evaluate_new()
+        k.evaluate_fast()
         # factorial(1000000)
         end = time.time() - start
         k.print_steps(show_result=False)
