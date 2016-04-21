@@ -3,7 +3,7 @@
 import operator
 from copy import deepcopy
 from math import log10
-
+from collections import deque
 import re
 from texttable import Texttable
 from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, UnicodeHack
@@ -33,8 +33,31 @@ class CAM:
         '-': lambda self: self._math_op(operator.sub),
         '=': lambda self: self._math_op(operator.eq)
     }
+
+    _transitions_new = {
+        '>': lambda self: self._cons(),
+        '<': lambda self: self.stack.append(self.term),
+        ',': lambda self: self._swap(),
+        '\'': lambda self: self._quote_new(),
+
+        u'Λ': lambda self: self._cur_new(),
+
+        u'ε': lambda self: self._app_new(),
+
+        'Fst': lambda self: self._car(),
+        'Snd': lambda self: self._cdr(),
+
+        'br': lambda self: self._branch_new(),
+        'Y': lambda self: self._rec_new(),
+
+        '*': lambda self: self._math_op(operator.mul),
+        '+': lambda self: self._math_op(operator.add),
+        '-': lambda self: self._math_op(operator.sub),
+        '=': lambda self: self._math_op(operator.eq)
+    }
     _valid_tokens = _transitions.keys()
     _possible_token_len = list(set(map(len, _transitions.keys())))
+    nums_re = re.compile(r'\d+')
 
     def __init__(self, code, save_history=True):
         self.code = UnicodeHack(code.replace(' ', ''))
@@ -49,6 +72,8 @@ class CAM:
         self.evaluated = False
         self.errors = False
 
+        self.parsed_code = self._parse_code(self.code)
+
         self.save_history = save_history
         if self.save_history:
             self.history.append([0, (), self.code, []])
@@ -61,10 +86,21 @@ class CAM:
         self.term = self.recursion_stack[rec_name]
         self.code = code
 
+    def _rec_new(self):
+        rec_name = 'r' + str(self.recs_count)
+        self.recs_count += 1
+        self.recursion_stack[rec_name] = (self.parsed_code.pop(0), (self.term, rec_name))
+        self.term = self.recursion_stack[rec_name]
+
     def _branch(self):
         args, code = get_term_in_brackets(self.code, remove_brackets=False)
         arg1, arg2 = parse_args_in_brackets(args)
         self.code = (arg1 if self.term else arg2) + code
+        self.term = self.stack.pop()
+
+    def _branch_new(self):
+        args = self.parsed_code.pop(0)
+        self.parsed_code = (args[0] if self.term else args[1]) + self.parsed_code
         self.term = self.stack.pop()
 
     def _push(self):
@@ -83,10 +119,16 @@ class CAM:
         arg, self.code = get_term_in_brackets(self.code)
         self.term = DictHack({arg: self.term})
 
+    def _cur_new(self):
+        self.term = (self.parsed_code.pop(0), self.term)
+
     def _quote(self):
-        self.term = UnicodeHack(re.search(r'\d+', self.code).group())
+        self.term = UnicodeHack(re.search(self.nums_re, self.code).group())
         length = int(log10(int(self.term))) + 1 if self.term != '0' else len(self.term)
         self.code = self.code[length:]
+
+    def _quote_new(self):
+        self.term = self.parsed_code.pop(0)[0]
 
     def _swap(self):
         tmp = self.stack.pop()
@@ -101,6 +143,14 @@ class CAM:
         self.code = self.term[0].keys()[0] + self.code
         self.term = (self.term[0].values()[0], self.term[1])
 
+    def _app_new(self):
+        if isinstance(self.term[0], basestring):
+            self.term = (
+                self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
+                self.term[1])
+        self.parsed_code = self.term[0][0] + self.parsed_code
+        self.term = (self.term[0][1], self.term[1])
+
     def _math_op(self, f):
         self.term = f(int(self.term[0]), int(self.term[1]))
 
@@ -112,9 +162,44 @@ class CAM:
                 return next_token
         raise Exception('Unknown token')
 
+    def _get_next_token_new(self, code):
+        for i in self._possible_token_len:
+            if code[0:i] in self._valid_tokens:
+                return UnicodeHack(code[0:i]), code[i:]
+        raise Exception('Unknown token')
+
+    def _parse_code(self, code):
+        parsed_code = []
+        while len(code):
+            next_token, code = self._get_next_token_new(code)
+            parsed_code.append(next_token)
+            if next_token == u'Λ' or next_token == 'Y':
+                arg, code = get_term_in_brackets(code)
+                parsed_code.append(self._parse_code(arg))
+            elif next_token == '\'':
+                arg = UnicodeHack(re.search(self.nums_re, code).group())
+                parsed_code.append([arg])
+                length = int(log10(int(arg))) + 1 if arg != '0' else len(arg)
+                code = code[length:]
+            elif next_token == 'br':
+                args, code = get_term_in_brackets(code, remove_brackets=False)
+                arg1, arg2 = parse_args_in_brackets(args)
+                parsed_code.append([self._parse_code(arg1), self._parse_code(arg2)])
+        return parsed_code[::-1]
+
     def next_step(self):
         try:
             self._transitions[self._get_next_token()](self)
+            self.iteration += 1
+        except Exception, e:
+            self.evaluated = True
+            self.errors = True
+            print 'Code could be invalid. Got exception: ' + str(e)
+
+    def next_step_new(self):
+        try:
+            tmp = self.parsed_code.pop(0)
+            self._transitions_new[tmp](self)
             self.iteration += 1
         except Exception, e:
             self.evaluated = True
@@ -126,6 +211,11 @@ class CAM:
             self.next_step()
             if self.save_history:
                 self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
+        self.evaluated = True
+
+    def evaluate_new(self):
+        while self.parsed_code and not self.evaluated:
+            self.next_step_new()
         self.evaluated = True
 
     def print_steps(self, show_result=True):
@@ -144,7 +234,7 @@ class CAM:
                 self.history = self.history[:-1]
             t = Texttable()
             data = [['№', 'Term', 'Code', 'Stack']] + [
-                [repr(i).decode("unicode_escape").encode('utf-8') for i in item] for item in self.history]
+                [repr(i) for i in item] for item in self.history]
             t.add_rows(data)
             t.set_cols_align(['l', 'r', 'r', 'r'])
             t.set_cols_valign(['m', 'm', 'm', 'm'])
@@ -159,6 +249,7 @@ class CAM:
 
 if __name__ == "__main__":
     import time
+
     # from math import factorial
     # import cam_compiler
 
@@ -178,13 +269,13 @@ if __name__ == "__main__":
 
     C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
     B = u"<<Snd,'0>=br('1," + C + u")"
-    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
+    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 1
     examples = [fact]
     for example in examples:
         print 'EXAMPLE STARTED'
         k = CAM(example, save_history=False)
         start = time.time()
-        k.evaluate()
+        k.evaluate_new()
         # factorial(1000000)
         end = time.time() - start
         k.print_steps(show_result=False)

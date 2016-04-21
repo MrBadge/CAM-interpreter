@@ -4,7 +4,7 @@ class TermException(Exception):
 
 class UnicodeHack(unicode):
     def __repr__(self):
-        return unicode.__repr__(self)[2:-1]
+        return unicode.__repr__(self)[2:-1].decode("unicode_escape").encode('utf-8')
 
 
 class DictHack(dict):
