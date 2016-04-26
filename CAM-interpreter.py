@@ -1,274 +1,101 @@
 #!/usr/bin/env python
 # coding=utf-8
-import operator
-from copy import deepcopy
-from math import log10
+import argparse
+import logging
+import sys
+import time
+from code_library import print_lib, get_lib_example
+import cam_compiler
+from core import CAM
 
-import re
-from texttable import Texttable
-from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, UnicodeHack
+
+def create_parser():
+    m = argparse.ArgumentParser(description='CAM-interpreter and compiler from lambda-code', epilog='Have pleasure')
+
+    m.add_argument('--lc', '--l_code', type=str,
+                   help='Code to be executed on CAM-machine in lambda-notation')
+    m.add_argument('--cc', '--c_code', type=str,
+                   help='Code to be executed on CAM-machine in CAM-notation')
+    m.add_argument('-l', '--library', action='store_true', help='Choose code from library')
+    m.add_argument('-f', '--fast', action='store_true',
+                   help='Use fast CAM-machine realization. Steps can\'t be saved in this mode')
+    m.add_argument('-o', '--opt', action='store_true', help='Use betta-optimization')
+    m.add_argument('--without_steps', action='store_true', help='Do not save execution steps')
+    m.add_argument('--no_result', action='store_true', help='Do not show final result after fast execution')
+
+    m.add_argument('--log', type=str, default=None, help='Log file path')
+    m.add_argument('-v', '--verbose', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='WARNING',
+                   help="Set the logging level")
+    return m
 
 
-class CAM:
-    _transitions = {
-        '>': lambda self: self._cons(),
-        '<': lambda self: self.stack.append(self.term),
-        ',': lambda self: self._swap(),
-        '\'': lambda self: self._quote(),
+def setup_logger(verbosity_level, log_file=None):
+    root = logging.getLogger()
+    root.handlers = []
+    root.setLevel(verbosity_level)
 
-        u'Λ': lambda self: self._cur(),
-        '\\': lambda self: self._cur(),
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-        u'ε': lambda self: self._app(),
-        'Eps': lambda self: self._app(),
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(verbosity_level)
+    ch.setFormatter(formatter)
+    root.addHandler(ch)
 
-        'Fst': lambda self: self._car(),
-        'Snd': lambda self: self._cdr(),
+    if log_file:
+        fh = logging.FileHandler(log_file)
+        fh.setLevel(verbosity_level)
+        fh.setFormatter(formatter)
+        root.addHandler(fh)
 
-        'br': lambda self: self._branch(),
-        'Y': lambda self: self._rec(),
 
-        '*': lambda self: self._math_op(operator.mul),
-        '+': lambda self: self._math_op(operator.add),
-        '-': lambda self: self._math_op(operator.sub),
-        '=': lambda self: self._math_op(operator.eq)
-    }
-
-    _transitions_new = {
-        '>': lambda self: self._cons(),
-        '<': lambda self: self.stack.append(self.term),
-        ',': lambda self: self._swap(),
-        '\'': lambda self: self._quote_new(),
-
-        u'Λ': lambda self: self._cur_new(),
-
-        u'ε': lambda self: self._app_new(),
-
-        'Fst': lambda self: self._car(),
-        'Snd': lambda self: self._cdr(),
-
-        'br': lambda self: self._branch_new(),
-        'Y': lambda self: self._rec_new(),
-
-        '*': lambda self: self._math_op(operator.mul),
-        '+': lambda self: self._math_op(operator.add),
-        '-': lambda self: self._math_op(operator.sub),
-        '=': lambda self: self._math_op(operator.eq)
-    }
-    _valid_tokens = _transitions.keys()
-    _possible_token_len = list(set(map(len, _transitions.keys())))
-    nums_re = re.compile(r'\d+')
-
-    def __init__(self, code, save_history=True):
-        self.code = UnicodeHack(code.replace(' ', ''))
-        self.term = ()
-        self.stack = []
-
-        self.recursion_stack = {}
-        self.recs_count = 0
-
-        self.history = []
-        self.iteration = 0
-        self.evaluated = False
-        self.errors = False
-
-        self.parsed_code = self._parse_code(self.code)
-
-        self.save_history = save_history
-        if self.save_history:
-            self.history.append([0, (), self.code, []])
-
-    def _rec(self):
-        arg, code = get_term_in_brackets(self.code)
-        rec_name = 'r' + str(self.recs_count)
-        self.recs_count += 1
-        self.recursion_stack[rec_name] = DictHack({arg: (self.term, rec_name)})
-        self.term = self.recursion_stack[rec_name]
-        self.code = code
-
-    def _rec_new(self):
-        rec_name = 'r' + str(self.recs_count)
-        self.recs_count += 1
-        self.recursion_stack[rec_name] = (self.parsed_code.pop(), (self.term, rec_name))
-        self.term = self.recursion_stack[rec_name]
-
-    def _branch(self):
-        args, code = get_term_in_brackets(self.code, remove_brackets=False)
-        arg1, arg2 = parse_args_in_brackets(args)
-        self.code = (arg1 if self.term else arg2) + code
-        self.term = self.stack.pop()
-
-    def _branch_new(self):
-        args = self.parsed_code.pop()
-        self.parsed_code += (args[0] if self.term else args[1])
-        self.term = self.stack.pop()
-
-    def _push(self):
-        self.stack.append(self.term)
-
-    def _car(self):
-        self.term = self.term[0]
-
-    def _cdr(self):
-        self.term = self.term[1]
-
-    def _cons(self):
-        self.term = (self.stack.pop(), self.term)
-
-    def _cur(self):
-        arg, self.code = get_term_in_brackets(self.code)
-        self.term = DictHack({arg: self.term})
-
-    def _cur_new(self):
-        self.term = (self.parsed_code.pop(), self.term)
-
-    def _quote(self):
-        self.term = UnicodeHack(re.search(self.nums_re, self.code).group())
-        length = int(log10(int(self.term))) + 1 if self.term != '0' else len(self.term)
-        self.code = self.code[length:]
-
-    def _quote_new(self):
-        self.term = self.parsed_code.pop()[0]
-
-    def _swap(self):
-        tmp = self.stack.pop()
-        self.stack.append(self.term)
-        self.term = tmp
-
-    def _app(self):
-        if isinstance(self.term[0], basestring):
-            self.term = (
-                self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
-                self.term[1])
-        self.code = self.term[0].keys()[0] + self.code
-        self.term = (self.term[0].values()[0], self.term[1])
-
-    def _app_new(self):
-        if isinstance(self.term[0], basestring):
-            self.term = (
-                self.recursion_stack[self.term[0]] if self.term[0] in self.recursion_stack.keys() else self.term[0],
-                self.term[1])
-        self.parsed_code += self.term[0][0]
-        self.term = (self.term[0][1], self.term[1])
-
-    def _math_op(self, f):
-        self.term = f(self.term[0], self.term[1])
-
-    def _get_next_token(self):
-        for i in self._possible_token_len:
-            if self.code[0:i] in self._valid_tokens:
-                next_token = self.code[0:i]
-                self.code = self.code[i:]
-                return next_token
-        raise Exception('Unknown token')
-
-    def _get_next_token_new(self, code):
-        for i in self._possible_token_len:
-            if code[0:i] in self._valid_tokens:
-                return UnicodeHack(code[0:i]), code[i:]
-        raise Exception('Unknown token')
-
-    def _parse_code(self, code):
-        parsed_code = []
-        while len(code):
-            next_token, code = self._get_next_token_new(code)
-            parsed_code.append(next_token)
-            if next_token == u'Λ' or next_token == 'Y':
-                arg, code = get_term_in_brackets(code)
-                parsed_code.append(self._parse_code(arg))
-            elif next_token == '\'':
-                arg = UnicodeHack(re.search(self.nums_re, code).group())
-                parsed_code.append([int(arg)])
-                length = int(log10(int(arg))) + 1 if arg != '0' else len(arg)
-                code = code[length:]
-            elif next_token == 'br':
-                args, code = get_term_in_brackets(code, remove_brackets=False)
-                arg1, arg2 = parse_args_in_brackets(args)
-                parsed_code.append([self._parse_code(arg1), self._parse_code(arg2)])
-        return parsed_code[::-1]
-
-    def next_step(self):
-        try:
-            self._transitions[self._get_next_token()](self)
-            self.iteration += 1
-        except Exception, e:
-            self.evaluated = True
-            self.errors = True
-            print 'Code could be invalid. Got exception: ' + str(e)
-
-    def evaluate(self):
-        while self.code and not self.evaluated:
-            self.next_step()
-            if self.save_history:
-                self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
-        self.evaluated = True
-
-    def evaluate_fast(self):
-        while self.parsed_code:
-            self._transitions_new[self.parsed_code.pop()](self)
-            self.iteration += 1
-        self.evaluated = True
-
-    def print_steps(self, show_result=True):
-        def max_len_of_list_of_str(s):
-            return max(len(line) for line in str(s).split('\n'))
-
-        def autodetect_width(d):
-            widths = [0] * len(d[0])
-            for line in d:
-                for _i in range(len(line)):
-                    widths[_i] = max(widths[_i], max_len_of_list_of_str(line[_i]))
-            return widths
-
-        if self.save_history:
-            if self.errors:
-                self.history = self.history[:-1]
-            t = Texttable()
-            data = [['№', 'Term', 'Code', 'Stack']] + [
-                [repr(i) for i in item] for item in self.history]
-            t.add_rows(data)
-            t.set_cols_align(['l', 'r', 'r', 'r'])
-            t.set_cols_valign(['m', 'm', 'm', 'm'])
-            t.set_cols_width(autodetect_width(data))
-            print t.draw()
+def main():
+    m = create_parser()
+    options = m.parse_args()
+    setup_logger(options.verbose, log_file=options.log)
+    if not (options.lc or options.cc or options.library):
+        logging.error('Lambda code, CAM code or on of the library example needed')
+        return
+    if options.fast:
+        options.without_steps = True
+    if options.lc:
+        c = cam_compiler.compile_expr(options.l_code)
+        logging.info('CAM code after compilation: %s' % c)
+    elif options.cc:
+        c = options.cc
+    else:
+        print_lib()
+        code, _type = get_lib_example(raw_input("Enter library code number: "))
+        if not code:
+            return
         else:
-            if not self.errors:
-                print '%s steps' % self.iteration
-                if show_result:
-                    print 'Result: %s' % self.term
+            c = cam_compiler.compile_expr(code) if _type == 'l' else code
+
+    k = CAM(c, save_history=not options.without_steps, with_opt=options.opt, fast_method=options.fast)
+    print 'Execution started'
+    start = time.time()
+    if options.fast:
+        k.evaluate_fast()
+    else:
+        k.evaluate()
+    end = time.time() - start
+    k.print_steps(show_result=not options.no_result)
+    print 'Execution ended, took %s s\n' % end
 
 
 if __name__ == "__main__":
-    import time
+    main()
 
-    # from math import factorial
-    # import cam_compiler
-
-    # dz1 = '(\\f.\\x.f x)(\\x.+[1,x])3'
-    # dz2 = '((\\x.\\f.+[x,f x])5)(\\x.*[4,x])'
-    # examples = [cam_compiler.compile_expr(dz1)]
-
-    # examples = [u"<Λ( Snd +),     <'1,'2>>ε", u"<Λ(Snd+),<'1,<Λ(Snd*),<'3,'4>>ε>>ε"]
-    # examples = [u"<Λ(<Snd, <'4, '3>>ε),Λ(Snd+)>ε"]
-    # examples = [u"<<Λ(Λ(<Λ(SndP),<Fst Snd,Snd>>)),'1>ε,'0>ε"]
-    # examples = [u"<Λ(<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε),'3>ε"]
-    # examples = [u"<Λ(<Snd, <Snd Fst, '2>>ε),Λ(Snd*)>ε"]
-    # examples = [u"<Λ(<<Snd,'4>ε,<Λ(Snd),'3>ε>ε),Λ(Snd+)>ε"]
-
-    # examples = [u"<Λ(<Λ(<Λ(Snd+),<FstSnd,Snd>>ε),'3>ε),'2>ε"]
-    # examples = [u"<<Λ(Λ(<FstSnd,<Snd,FstSnd>ε>>+)),Λ(<'4,Snd>*)>ε,'5>ε"]
-
-    C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
-    B = u"<<Snd,'0>=br('1," + C + u")"
-    fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
-    examples = [fact]
-    for example in examples:
-        print 'EXAMPLE STARTED'
-        k = CAM(example, save_history=False)
-        start = time.time()
-        k.evaluate_fast()
-        # factorial(1000000)
-        end = time.time() - start
-        k.print_steps(show_result=False)
-        print 'EXAMPLE ENDED, TOOK %s s\n' % end
-        del k
+    # C = u"<Snd,<FstSnd,<Snd,'1>->ε>*"
+    # B = u"<<Snd,'0>=br('1," + C + u")"
+    # fact = u"<<Y(" + B + u")>Λ(" + B + u")><Snd,'%s>ε" % 100000
+    # examples = [fact]
+    # for example in examples:
+    #     print 'EXAMPLE STARTED'
+    #     k = CAM(example, save_history=False, with_opt=False)
+    #     start = time.time()
+    #     k.evaluate_fast()
+    #     # factorial(100000)
+    #     end = time.time() - start
+    #     k.print_steps(show_result=False)
+    #     print 'EXAMPLE ENDED, TOOK %s s\n' % end
+    #     del k
