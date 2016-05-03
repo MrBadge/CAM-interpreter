@@ -213,6 +213,7 @@ class CAM:
 
     @staticmethod
     def optimize_code(code):
+        logging.info('Code before optimization: %s' % code)
         code = code.replace(u'Λ', '\\').replace(u'ε', 'Eps')
         was_optimized = True
         while was_optimized:

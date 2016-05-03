@@ -12,15 +12,15 @@ LIBRARY = [
     ('x + y * z', u"<Λ(Snd+),<x,<Λ(Snd*),<y,z>>ε>>ε", 'c',
      lambda x, y, z: u"<Λ(Snd+),<'%s,<Λ(Snd*),<'%s,'%s>>ε>>ε" % (x, y, z)),
 
-    ('x!', u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'x>ε", 'c',
-     lambda x: u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'%s>ε" % x),
+    ('n!', u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'n>ε", 'c',
+     lambda n: u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'%s>ε" % n),
 
     ('t + u * t', u"((\\x.\\f.+[x,f x])t)(\\x.*[u,x])", 'l',
      lambda t, u: u"((\\x.\\f.+[x,f x])%s)(\\x.*[%s,x])" % (t, u)),
 
     ('t + u', u"(\\f.\\x.f x)(\\x.+[t,x])u", 'l',
      lambda t, u: u"(\\f.\\x.f x)(\\x.+[%s,x])%s" % (t, u)),
-    ('t!', u"(\\g.g1)(Y(\\f.\\n.if(=[n,0])then(1)else(*[n,f(-[n,1])])))", 'l',
+    ('t!', u"(\\g.g t)(Y(\\f.\\n.if(=[n,0])then(1)else(*[n,f(-[n,1])])))", 'l',
      lambda t: u"(\\g.g%s)(Y(\\f.\\n.if(=[n,0])then(1)else(*[n,f(-[n,1])])))" % t),
 ]
 
