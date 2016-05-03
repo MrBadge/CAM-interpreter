@@ -67,13 +67,13 @@ def main():
         c = options.cc
     else:
         print_lib()
-        code_generator, _type = get_lib_example(raw_input('Enter library code number: '))
+        code_generator, _type = get_lib_example(raw_input('Enter library code number: ').strip())
         if not _type:
             return
         else:
             code = ''
             try:
-                code = code_generator(*raw_input('Enter arguments split by space: ').split())
+                code = code_generator(*raw_input('Enter arguments split by space: ').strip().split())
             except TypeError, e:
                 logging.error('Invalid arguments count: %s' % e.message)
                 exit(1)
