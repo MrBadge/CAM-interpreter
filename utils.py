@@ -31,7 +31,16 @@ def get_term_in_brackets(expr, br='()', remove_brackets=True):
 
 def parse_args_in_brackets(expr, br='()'):
     br_sum = 1
+    # open_br_sums = {'(': 0, '{': 0, '<': 0}
+    # close_br_sums = {')': '(', '}': '{', '>': '<'}
+    # open_br_sums[br[0]] = 1
     for i, c in enumerate(expr[1:]):
+        # if c in open_br_sums.keys():
+        #     open_br_sums[c] += 1
+        # elif c in close_br_sums.keys():
+        #     open_br_sums[close_br_sums[c]] -= 1
+        # elif c == ',' and all(s == 0 or s == 1 for s in open_br_sums.values()):
+        #     return expr[1:i + 1], expr[i + 2:-1]
         if c == br[0]:
             br_sum += 1
         elif c == br[1]:
