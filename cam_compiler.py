@@ -1,8 +1,8 @@
 # coding=utf-8
-from utils import get_term_in_brackets, TermException
+from utils import get_term_in_brackets, TermException, is_in_brackets
 
 
-class Term:
+class Term(object):
     parent = None
     term_tree = None
 
@@ -26,29 +26,53 @@ class Term:
         return expr[:i], expr[i:]
 
     @classmethod
+    def _get_next_conditional_term(cls, expr):
+        condition, rest = cls._get_next_term(expr[2:])
+
+        if rest[:4] == 'then':
+            true_branch, rest = cls._get_next_term(rest[4:])
+        else:
+            raise TermException('Invalid conditional term (then not found): %s' % expr)
+
+        if rest[:4] == 'else':
+            false_branch = cls._get_term(rest[4:])
+        else:
+            raise TermException('Invalid conditional term (else not found): %s' % expr)
+
+        return cls.get_conditional_term(condition, true_branch, false_branch), ''
+
+    @classmethod
     def _get_next_term(cls, expr):
         expr = cls._preprocess_expr(expr)
         if expr[0] == '\\':
             return Term(expr), ''
         if expr[0] == '(':
             t, r = get_term_in_brackets(expr)
-            return Term(t), r
+            return cls._get_term(t), r
         elif expr[0] == '[':
             t, r = get_term_in_brackets(expr, '[]', False)
             return Term(t), r
         elif expr[0].isdigit():
             t, r = cls._get_number(expr)
             return Constant(t), r
+        elif len(expr) > 10 and expr[:2] == 'if' and 'then' in expr and 'else' in expr:
+            return cls._get_next_conditional_term(expr)
         elif expr[0] in Variable.NAMES:
             return Variable(expr[0]), expr[1:]
-        elif expr[0] in MathOperation.OPERATIONS.keys():
+        elif expr[0] in CombinatorY.NAMES:
+            return CombinatorY(expr[0]), expr[1:]
+        elif expr[0] in MathOperation.OPERATIONS:
             return MathOperation(expr[0]), expr[1:]
 
     @classmethod
     def _get_term(cls, expr):
         term, r = cls._get_next_term(expr)
         while r:
-            t, r = cls._get_next_term(r)
+            if is_in_brackets(r):
+                t = cls._get_term(r)
+                r = ''
+            else:
+                t, r = cls._get_next_term(r)
             term = cls.get_term(Node.APPLICATION, term, t)
         return term
 
@@ -69,6 +93,12 @@ class Term:
     def get_term(op, left, right):
         res = Term()
         res.term_tree = Node(op, left, right, res)
+        return res
+
+    @staticmethod
+    def get_conditional_term(condition, true_branch, false_branch):
+        res = Term()
+        res.term_tree = ConditionNode(condition, true_branch, false_branch, res)
         return res
 
     def __init__(self, expr=None):
@@ -115,8 +145,22 @@ class Constant(Term):
         return self.value
 
 
+class CombinatorY(Term):
+    NAMES = 'Y'
+
+    def __init__(self, name):
+        Term.__init__(self)
+        self.name = name
+
+    def code(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
+
+
 class Variable(Term):
-    NAMES = ['x', 'y', 'z', 'f']
+    NAMES = ['x', 'y', 'z', 'f', 'g', 'n']
     name = None
     de_br_code = None
     var_list = []
@@ -164,26 +208,29 @@ class Variable(Term):
 
 
 class MathOperation(Term):
-    OPERATIONS = {
-        '+': lambda x, y: x + y,
-        '*': lambda x, y: x * y
-    }
+    OPERATIONS = [
+        '+',
+        '*',
+        '=',
+        '-',
+    ]
+
     op = None
     f = None
 
     def __init__(self, op):
         Term.__init__(self)
         self.op = op
-        self.f = self.OPERATIONS[op]
 
     def code(self):
+        # return u'%s' % self.op
         return u'Λ(Snd %s)' % self.op
 
     def __repr__(self):
         return self.op
 
 
-class Node:
+class Node(object):
     LAMBDA_ABSTRACTION = 0
     APPLICATION = 1
     PAIR = 2
@@ -209,6 +256,15 @@ class Node:
         if self.op_type == self.LAMBDA_ABSTRACTION:
             return u'Λ(%s)' % self.right.code()
         elif self.op_type == self.APPLICATION:
+            if type(self.left) == CombinatorY:
+                if self.right.term_tree.op_type == self.LAMBDA_ABSTRACTION and \
+                                self.right.term_tree.right.term_tree.op_type == self.LAMBDA_ABSTRACTION:
+                    # return u'Λ(%s)<Y(%s)>' % (self.right.term_tree.right.term_tree.right.code(),
+                    #                           self.right.term_tree.right.term_tree.right.code())
+                    return u'<%s, Y(%s)>ε' % (self.right.code(),
+                                              self.right.term_tree.right.term_tree.right.code())
+                else:
+                    return u'<%s, Y(%s)>ε' % (self.right.code(), self.right.code())
             return u'<%s, %s>ε' % (self.left.code(), self.right.code())
         elif self.op_type == self.PAIR:
             return u'<%s, %s>' % (self.left.code(), self.right.code())
@@ -220,6 +276,26 @@ class Node:
             return '(%s)(%s)' % (str(self.left), str(self.right))
         elif self.op_type == self.PAIR:
             return '[%s, %s]' % (str(self.left), str(self.right))
+
+
+class ConditionNode(Node):
+    CONDITION_OP = 3
+
+    def __init__(self, condition, true_term, false_term, owner=None):
+        self.condition = condition
+        Node.__init__(self, self.CONDITION_OP, true_term, false_term, owner)
+
+    def set_owner(self, owner):
+        super(ConditionNode, self).set_owner(owner)
+        self.condition.parent = owner
+
+    def code(self):
+        return u'if%sbr(%s,%s)' % \
+               (self.condition.code(), self.left.code(), self.right.code())
+
+    def __repr__(self):
+        return "if (%s) then (%s) else (%s)" % \
+               (str(self.condition), str(self.left), str(self.right))
 
 
 def compile_expr(expr):

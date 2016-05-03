@@ -4,8 +4,9 @@ import argparse
 import logging
 import sys
 import time
-from code_library import print_lib, get_lib_example
+
 import cam_compiler
+from code_library import print_lib, get_lib_example
 from core import CAM
 
 
@@ -20,6 +21,8 @@ def create_parser():
     m.add_argument('-f', '--fast', action='store_true',
                    help='Use fast CAM-machine realization. Steps can\'t be saved in this mode')
     m.add_argument('-o', '--opt', action='store_true', help='Use betta-optimization')
+    m.add_argument('-p', '--parallel', action='store_true',
+                   help='Multi-thread computations for <code> constructions. Alpha version, result not guaranteed')
     m.add_argument('--without_steps', action='store_true', help='Do not save execution steps')
     m.add_argument('--no_result', action='store_true', help='Do not show final result after fast execution')
 
@@ -64,19 +67,23 @@ def main():
         c = options.cc
     else:
         print_lib()
-        code, _type = get_lib_example(raw_input("Enter library code number: "))
-        if not code:
+        code_generator, _type = get_lib_example(raw_input('Enter library code number: '))
+        if not _type:
             return
         else:
+            code = ''
+            try:
+                code = code_generator(*raw_input('Enter arguments split by space: ').split())
+            except TypeError, e:
+                logging.error('Invalid arguments count: %s' % e.message)
+                exit(1)
             c = cam_compiler.compile_expr(code) if _type == 'l' else code
 
-    k = CAM(c, save_history=not options.without_steps, with_opt=options.opt, fast_method=options.fast)
+    k = CAM(c, save_history=not options.without_steps, with_opt=options.opt, fast_method=options.fast,
+            parallel=options.parallel)
     print 'Execution started'
     start = time.time()
-    if options.fast:
-        k.evaluate_fast()
-    else:
-        k.evaluate()
+    k.evaluate()
     end = time.time() - start
     k.print_steps(show_result=not options.no_result)
     print 'Execution ended, took %s s\n' % end

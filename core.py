@@ -3,16 +3,21 @@ import logging
 import operator
 from copy import deepcopy
 from math import log10
+from multiprocessing.pool import ThreadPool
 
 import re
 from texttable import Texttable
+from utils import TermException
 from utils import get_term_in_brackets, parse_args_in_brackets, DictHack, UnicodeHack
+
+pool = ThreadPool(processes=4)
 
 
 class CAM:
     _transitions = {
         '>': lambda self, _: self._cons(),
-        '<': lambda self, _: self.stack.append(self.term),
+        '<': lambda self, fast: self._push_new() if fast else self._push(self.parallel),
+        'if': lambda self, fast: self._if_new() if fast else self._if(),
         ',': lambda self, _: self._swap(),
         '\'': lambda self, fast: self._quote_new() if fast else self._quote(),
 
@@ -37,9 +42,9 @@ class CAM:
     _possible_token_len = list(set(map(len, _transitions.keys())))
     nums_re = re.compile(r'-?\d+')
     betta_opt_rule = re.compile(r'<\\\((?P<X>.*)\),(?P<Z>.*)>Eps')
-    betta_opt_rule_identifier = re.compile(r'<\\\(.*')
+    operation_opt_rule = re.compile(r'<<(.*?),(.*?)>>Snd(\*|\+|-|=)')
 
-    def __init__(self, code, save_history=True, with_opt=True, fast_method=False):
+    def __init__(self, code, save_history=True, with_opt=True, fast_method=False, parallel=False):
         self.code = UnicodeHack(code.replace(' ', ''))
         if with_opt:
             self.code = CAM.optimize_code(self.code)
@@ -54,12 +59,23 @@ class CAM:
         self.evaluated = False
         self.errors = False
 
-        if fast_method:
+        self.parallel = parallel
+        self.fast_method = fast_method
+
+        if self.fast_method:
             self.parsed_code = self._parse_code(self.code)
 
         self.save_history = save_history
         if self.save_history:
             self.history.append([0, (), self.code, []])
+
+    @staticmethod
+    def _calc_part(cam, code_part):
+        sub_cam = CAM(code_part, save_history=cam.save_history, with_opt=False, fast_method=cam.fast_method,
+                      parallel=cam.parallel)
+        sub_cam.term = cam.term
+        sub_cam.evaluate()
+        return sub_cam.term
 
     def _rec(self):
         arg, code = get_term_in_brackets(self.code)
@@ -86,7 +102,30 @@ class CAM:
         self.parsed_code += (args[0] if self.term else args[1])
         self.term = self.stack.pop()
 
-    def _push(self):
+    def _if(self):
+        self._push(False)
+
+    def _if_new(self):
+        self._push_new()
+
+    def _push(self, parallel):
+        if parallel:
+            try:
+                term, tmp = get_term_in_brackets('<' + self.code, br='<>', remove_brackets=False)
+                args = parse_args_in_brackets(term, br='<>')
+                self.code = tmp  # self.code[len(term) - 1:]
+                if args:
+                    t1 = pool.apply_async(CAM._calc_part, (self, args[0]))
+                    t2 = pool.apply_async(CAM._calc_part, (self, args[1]))
+                    self.term = (t1.get(), t2.get())
+                else:
+                    self.term = CAM._calc_part(self, term[1:-1])
+            except TermException:
+                self.stack.append(self.term)
+        else:
+            self.stack.append(self.term)
+
+    def _push_new(self):
         self.stack.append(self.term)
 
     def _car(self):
@@ -145,29 +184,31 @@ class CAM:
                 return next_token
         raise Exception('Unknown token')
 
-    def _get_next_token_new(self, code):
-        for i in self._possible_token_len:
-            if code[0:i] in self._valid_tokens:
+    @staticmethod
+    def _get_next_token_new(code):
+        for i in CAM._possible_token_len:
+            if code[0:i] in CAM._valid_tokens:
                 return UnicodeHack(code[0:i]), code[i:]
         raise Exception('Unknown token')
 
-    def _parse_code(self, code):
+    @staticmethod
+    def _parse_code(code):
         parsed_code = []
         while len(code):
-            next_token, code = self._get_next_token_new(code)
+            next_token, code = CAM._get_next_token_new(code)
             parsed_code.append(next_token)
             if next_token == u'Λ' or next_token == 'Y':
                 arg, code = get_term_in_brackets(code)
-                parsed_code.append(self._parse_code(arg))
+                parsed_code.append(CAM._parse_code(arg))
             elif next_token == '\'':
-                arg = int(UnicodeHack(re.search(self.nums_re, code).group()))
+                arg = int(UnicodeHack(re.search(CAM.nums_re, code).group()))
                 parsed_code.append([arg])
                 length = int(log10(abs(arg))) + 1 if arg != 0 else 1
                 code = code[length if arg >= 0 else length + 1:]
             elif next_token == 'br':
                 args, code = get_term_in_brackets(code, remove_brackets=False)
                 arg1, arg2 = parse_args_in_brackets(args)
-                parsed_code.append([self._parse_code(arg1), self._parse_code(arg2)])
+                parsed_code.append([CAM._parse_code(arg1), CAM._parse_code(arg2)])
         return parsed_code[::-1]
 
     @staticmethod
@@ -184,6 +225,13 @@ class CAM:
                 lambda_arg, _ = get_term_in_brackets(arg1[1:])
                 code = code.replace('<%s,%s>Eps' % (arg1, arg2), '<%s>%s' % (arg2, lambda_arg))
                 was_optimized = True
+            for item in re.finditer(CAM.operation_opt_rule, code):
+                arg, rest_code = get_term_in_brackets(item.group(), br='<>', exception=False)
+                if not arg or rest_code[:3] != 'Snd':
+                    continue
+                operation = rest_code[-1]
+                code = code.replace('<%s>Snd%s' % (arg, operation), '%s%s' % (arg, operation))
+                was_optimized = True
 
         code = UnicodeHack(code.replace('\\', u'Λ').replace('Eps', u'ε'))
         logging.info('Optimized code: %s' % code)
@@ -199,16 +247,15 @@ class CAM:
             logging.error('Code could be invalid. Got exception: ' + str(e))
 
     def evaluate(self):
-        while self.code and not self.evaluated:
-            self.next_step()
-            if self.save_history:
-                self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
-        self.evaluated = True
-
-    def evaluate_fast(self):
-        while self.parsed_code:
-            self._transitions[self.parsed_code.pop()](self, True)
-            self.iteration += 1
+        if self.fast_method:
+            while self.parsed_code:
+                self._transitions[self.parsed_code.pop()](self, True)
+                self.iteration += 1
+        else:
+            while self.code and not self.evaluated:
+                self.next_step()
+                if self.save_history:
+                    self.history.append([self.iteration, self.term, UnicodeHack(self.code), deepcopy(self.stack)])
         self.evaluated = True
 
     def print_steps(self, show_result=True):
@@ -226,15 +273,16 @@ class CAM:
             if self.errors:
                 self.history = self.history[:-1]
             t = Texttable()
-            data = [['№', 'Term', 'Code', 'Stack']] + [
-                [repr(i) for i in item] for item in self.history]
+            header = ['№', 'Term', 'Code'] if self.parallel else ['№', 'Term', 'Code', 'Stack']
+            data = [header] + [
+                [repr(i) for i in item][:-1] if self.parallel else [repr(i) for i in item] for item in self.history]
             t.add_rows(data)
-            t.set_cols_align(['l', 'r', 'r', 'r'])
-            t.set_cols_valign(['m', 'm', 'm', 'm'])
+            t.set_cols_align(['l'] + ['r'] * (len(header) - 1))
+            t.set_cols_valign(['m'] + ['m'] * (len(header) - 1))
             t.set_cols_width(autodetect_width(data))
             print t.draw()
         else:
             if not self.errors:
-                print '%s steps' % self.iteration
+                print ' Steps: %10s' % self.iteration
                 if show_result:
-                    print 'Result: %s' % repr(self.term)
+                    print 'Result: %10s' % repr(self.term)
