@@ -36,7 +36,14 @@ class CAM:
         '*': lambda self, fast: self._math_op(operator.mul),
         '+': lambda self, fast: self._math_op(operator.add),
         '-': lambda self, fast: self._math_op(operator.sub),
-        '=': lambda self, fast: self._math_op(operator.eq)
+        '=': lambda self, fast: self._math_op(operator.eq),
+        'M': lambda self, _: self._math_op(operator.gt),
+        'ge': lambda self, _: self._math_op(operator.ge),
+        'L': lambda self, _: self._math_op(operator.lt),
+        'le': lambda self, _: self._math_op(operator.le),
+        'ne': lambda self, _: self._math_op(operator.ne),
+        '&': lambda self, _: self._math_op(operator.and_),
+        '|': lambda self, _: self._math_op(operator.or_),
     }
     _valid_tokens = _transitions.keys()
     _possible_token_len = list(set(map(len, _transitions.keys())))
@@ -213,7 +220,6 @@ class CAM:
 
     @staticmethod
     def optimize_code(code):
-        logging.info('Code before optimization: %s' % code)
         code = code.replace(u'Λ', '\\').replace(u'ε', 'Eps')
         was_optimized = True
         while was_optimized:

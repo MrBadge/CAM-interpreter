@@ -78,6 +78,7 @@ def main():
                 logging.error('Invalid arguments count: %s' % e.message)
                 exit(1)
             c = cam_compiler.compile_expr(code) if _type == 'l' else code
+            logging.info('CAM code after compilation: %s' % c)
 
     k = CAM(c, save_history=not options.without_steps, with_opt=options.opt, fast_method=options.fast,
             parallel=options.parallel)

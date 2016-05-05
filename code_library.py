@@ -15,6 +15,9 @@ LIBRARY = [
     ('n!', u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'n>ε", 'c',
      lambda n: u"<<Y(" + _B + u")>Λ(" + _B + u")><Snd,'%s>ε" % n),
 
+    ('(Artem\'s code) n!', u"<Y(if<Snd,'0>=br('1,<Snd,<FstSnd,<Snd,'1>->ε>*)),'n>ε", 'c',
+     lambda n: u"<Y(if<Snd,'0>=br('1,<Snd,<FstSnd,<Snd,'1>->ε>*)),'%s>ε" % n),
+
     ('t + u * t', u"((\\x.\\f.+[x,f x])t)(\\x.*[u,x])", 'l',
      lambda t, u: u"((\\x.\\f.+[x,f x])%s)(\\x.*[%s,x])" % (t, u)),
 
@@ -22,6 +25,9 @@ LIBRARY = [
      lambda t, u: u"(\\f.\\x.f x)(\\x.+[%s,x])%s" % (t, u)),
     ('t!', u"(\\g.g t)(Y(\\f.\\n.if(=[n,0])then(1)else(*[n,f(-[n,1])])))", 'l',
      lambda t: u"(\\g.g%s)(Y(\\f.\\n.if(=[n,0])then(1)else(*[n,f(-[n,1])])))" % t),
+
+    ('fib t', u"(\\g.g t)(Y(\\f.\\n.if(=[n,0])then(1)else(if(=[n,1])then(1)else(+[f(-[n,1]), f(-[n,2])]))))", 'l',
+     lambda t: u"(\\g.g%s)(Y(\\f.\\n.if(=[n,0])then(1)else(if(=[n,1])then(1)else(+[f(-[n,1]), f(-[n,2])]))))" % t),
 ]
 
 
