@@ -160,7 +160,7 @@ class CombinatorY(Term):
 
 
 class Variable(Term):
-    NAMES = ['x', 'y', 'z', 'f', 'g', 'n']
+    NAMES = ['x', 'y', 'z', 'f', 'g', 'n', 'm']
     name = None
     de_br_code = None
     var_list = []
@@ -213,6 +213,10 @@ class MathOperation(Term):
         '*',
         '=',
         '-',
+        'L',
+        'M',
+        '&',
+        '|',
     ]
 
     op = None
