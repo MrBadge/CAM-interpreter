@@ -61,7 +61,7 @@ def main():
     if options.fast:
         options.without_steps = True
     if options.lc:
-        c = cam_compiler.compile_expr(options.l_code)
+        c = cam_compiler.compile_expr(options.lc)
         logging.info('CAM code after compilation: %s' % c)
     elif options.cc:
         c = options.cc
