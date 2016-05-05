@@ -30,10 +30,10 @@ LIBRARY = [
      lambda t: u"(\\g.g%s)(Y(\\f.\\n.if(=[n,0])then(1)else(if(=[n,1])then(1)else(+[f(-[n,1]), f(-[n,2])]))))" % t),
 
     ('Ackermann u v',
-     u"(\\g.g u v)(Y(\\f.\\m.\\n.if(=[m,0])then(+[n,1])else(if(&[M[m,0],=[n,0]])then(f(-[m,1],1))else(f(-[m,1],f(m,-[n,1]))))))",
+     u"(\\g.g (u) (v))(Y(\\f.\\m.\\n.if(=[m,0])then(+[n,1])else(if(&[M[m,0],=[n,0]])then(f(-[m,1])(1))else(f(-[m,1])(f(m)(-[n,1]))))))",
      'l',
      lambda u,
-            v: u"(\\g.g %s %s)(Y(\\f.\\m.\\n.if(=[m,0])then(+[n,1])else(if(&[M[m,0],=[n,0]])then(f(-[m,1],1))else(f(-[m,1],f(m,-[n,1]))))))" % (
+            v: u"(\\g.g (%s) (%s))(Y(\\f.\\m.\\n.if(=[m,0])then(+[n,1])else(if(&[M[m,0],=[n,0]])then(f(-[m,1])(1))else(f(-[m,1])(f(m)(-[n,1]))))))" % (
          u, v)),
 ]
 
